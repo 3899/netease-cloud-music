@@ -3,7 +3,7 @@ name: deploy image
 
 on:
   push:
-#    branches: [ "" ]
+    branches: [ "master" ]
     tags:
       - v*
   pull_request:
@@ -17,7 +17,7 @@ on:
 jobs:
   push:
     name: Push Docker image to multiple registries
-    if: ${{ github.repository == 'chaunsin/netease-cloud-music' }}
+    if: ${{ github.repository == '3899/netease-cloud-music' }}
     runs-on: ubuntu-latest
     permissions:
       packages: write

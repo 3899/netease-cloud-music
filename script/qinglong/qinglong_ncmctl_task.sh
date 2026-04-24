@@ -43,6 +43,18 @@ NCMCTL_QINGLONG_SIGN=${NCMCTL_QINGLONG_SIGN:-true}
 NCMCTL_QINGLONG_SIGN_AUTOMATIC=${NCMCTL_QINGLONG_SIGN_AUTOMATIC:-false}
 # 是否开启刷歌功能，默认开启
 NCMCTL_QINGLONG_SCROBBLE=${NCMCTL_QINGLONG_SCROBBLE:-true}
+# 是否开启指定歌曲完整播放任务，默认关闭
+NCMCTL_QINGLONG_PLAYIDS=${NCMCTL_QINGLONG_PLAYIDS:-false}
+# 指定歌曲ID列表，逗号分隔
+NCMCTL_QINGLONG_PLAYIDS_IDS=${NCMCTL_QINGLONG_PLAYIDS_IDS:-''}
+# 指定歌曲ID文件路径
+NCMCTL_QINGLONG_PLAYIDS_IDS_FILE=${NCMCTL_QINGLONG_PLAYIDS_IDS_FILE:-''}
+# 指定歌曲完整播放数量
+NCMCTL_QINGLONG_PLAYIDS_NUM=${NCMCTL_QINGLONG_PLAYIDS_NUM:-''}
+# 两首歌之间最小随机间隔，单位秒
+NCMCTL_QINGLONG_PLAYIDS_GAP_MIN=${NCMCTL_QINGLONG_PLAYIDS_GAP_MIN:-''}
+# 两首歌之间最大随机间隔，单位秒
+NCMCTL_QINGLONG_PLAYIDS_GAP_MAX=${NCMCTL_QINGLONG_PLAYIDS_GAP_MAX:-''}
 # 是否开启音乐合伙人签到功能，默认开启
 NCMCTL_QINGLONG_PARTNER=${NCMCTL_QINGLONG_PARTNER:-true}
 
@@ -63,6 +75,35 @@ if [[ "$(to_lower "${NCMCTL_QINGLONG_SCROBBLE}")" == "true" ]]; then
   echo ">>> 执行刷歌任务 <<<"
   ncmctl scrobble
   echo "--- 执行刷歌任务完成 ---"
+fi
+
+# 执行指定歌曲完整播放任务，默认关闭。
+if [[ "$(to_lower "${NCMCTL_QINGLONG_PLAYIDS}")" == "true" ]]; then
+  playids_args=()
+
+  if [[ -n "${NCMCTL_QINGLONG_PLAYIDS_IDS}" ]]; then
+    playids_args+=(--ids "${NCMCTL_QINGLONG_PLAYIDS_IDS}")
+  fi
+  if [[ -n "${NCMCTL_QINGLONG_PLAYIDS_IDS_FILE}" ]]; then
+    playids_args+=(--ids-file "${NCMCTL_QINGLONG_PLAYIDS_IDS_FILE}")
+  fi
+  if [[ ${#playids_args[@]} -eq 0 ]]; then
+    echo "Error: Please set NCMCTL_QINGLONG_PLAYIDS_IDS or NCMCTL_QINGLONG_PLAYIDS_IDS_FILE" >&2
+    exit 1
+  fi
+  if [[ -n "${NCMCTL_QINGLONG_PLAYIDS_NUM}" ]]; then
+    playids_args+=(--num "${NCMCTL_QINGLONG_PLAYIDS_NUM}")
+  fi
+  if [[ -n "${NCMCTL_QINGLONG_PLAYIDS_GAP_MIN}" ]]; then
+    playids_args+=(--gap-min "${NCMCTL_QINGLONG_PLAYIDS_GAP_MIN}")
+  fi
+  if [[ -n "${NCMCTL_QINGLONG_PLAYIDS_GAP_MAX}" ]]; then
+    playids_args+=(--gap-max "${NCMCTL_QINGLONG_PLAYIDS_GAP_MAX}")
+  fi
+
+  echo ">>> 执行指定歌曲完整播放任务 <<<"
+  ncmctl playids "${playids_args[@]}"
+  echo "--- 执行指定歌曲完整播放任务完成 ---"
 fi
 
 # 执行音乐合伙人签到任务,注意如果有没有此功能权限则设置为false，不然会出现错误。

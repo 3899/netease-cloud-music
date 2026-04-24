@@ -145,7 +145,7 @@ func (c *Client) GetClient() *http.Client {
 func (c *Client) Cookie(url, name string) (http.Cookie, bool) {
 	uri, err := neturl.Parse(url)
 	if err != nil {
-		log.Warn("cookie parse(%v) err: ", url, err)
+		log.Warn("cookie parse(%v) err: %v", url, err)
 		return http.Cookie{}, false
 	}
 	for _, c := range c.cookie.Cookies(uri) {

@@ -2,11 +2,11 @@ name: ci
 
 on:
   push:
-#    branches: [ "" ]
+    branches: [ "master" ]
     tags:
       - 'v*'
   pull_request:
-#    branches: [ "" ]
+    branches: [ "master" ]
   workflow_dispatch:
     inputs:
       debug_enabled:
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    if: ${{ github.repository == 'chaunsin/netease-cloud-music' }}
+    if: ${{ github.repository == '3899/netease-cloud-music' }}
     runs-on: ubuntu-latest
     steps:
       # Step 0: 检出代码
@@ -52,9 +52,9 @@ jobs:
           #sudo apt-get install upx  
 
       # Step 4: 生成 changelog
-      # https://github.com/jaywcjlove/changelog-generator
       - name: Generate changelog
         id: changelog
+        if: env.PREVIOUS_TAG != ''
         uses: jaywcjlove/changelog-generator@main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -79,6 +79,7 @@ jobs:
 
       # Step 5: 打印 changelog
       - name: Print Changelog
+        if: env.PREVIOUS_TAG != ''
         run: |
           echo "Changelog:"
           echo "GitHub Pages Hash: ${{ steps.changelog.outputs.gh-pages-hash }}"    
@@ -92,11 +93,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: goreleaser/goreleaser-action@v6
         with:
-          # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
-          # 'latest', 'nightly', or a semver
           version: "~> v2"
-          args: release --clean --release-notes=./note.md
+          args: release --clean ${{ env.PREVIOUS_TAG != '' && '--release-notes=./note.md' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}

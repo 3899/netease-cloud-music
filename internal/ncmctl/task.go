@@ -50,6 +50,10 @@ type TaskOpts struct {
 	ScrobbleOptsCrontab string
 	ScrobbleOpts
 
+	PlayIDs            bool
+	PlayIDsOptsCrontab string
+	PlayIDsOpts
+
 	SignIn            bool
 	SignInOptsCrontab string
 	SignInOpts
@@ -68,7 +72,7 @@ func NewTask(root *Root, l *log.Logger) *Task {
 		l:    l,
 		cmd: &cobra.Command{
 			Use:     "task",
-			Short:   "[need login] Daily tasks are executed asynchronously [partner、scrobble、sign]",
+			Short:   "[need login] Daily tasks are executed asynchronously [partner、playids、scrobble、sign]",
 			Example: `  ncmctl task`,
 		},
 	}
@@ -91,7 +95,15 @@ func (c *Task) addFlags() {
 
 	c.cmd.PersistentFlags().BoolVar(&c.opts.Scrobble, "scrobble", false, "enabled scrobble task")
 	c.cmd.PersistentFlags().StringVar(&c.opts.ScrobbleOptsCrontab, "scrobble.cron", "0 18 * * *", "scrobble crontab expression. usage detail: https://crontab.guru")
-	c.cmd.PersistentFlags().Int64Var(&c.opts.ScrobbleOpts.Num, "scrobble.num",  300, "scrobble num of songs")
+	c.cmd.PersistentFlags().Int64Var(&c.opts.ScrobbleOpts.Num, "scrobble.num", 300, "scrobble num of songs")
+
+	c.cmd.PersistentFlags().BoolVar(&c.opts.PlayIDs, "playids", false, "enabled playids task")
+	c.cmd.PersistentFlags().StringVar(&c.opts.PlayIDsOptsCrontab, "playids.cron", "0 19 * * *", "playids crontab expression. usage detail: https://crontab.guru")
+	c.cmd.PersistentFlags().StringVar(&c.opts.PlayIDsOpts.IDs, "playids.ids", "", "comma-separated song ids")
+	c.cmd.PersistentFlags().StringVar(&c.opts.PlayIDsOpts.IDsFile, "playids.ids-file", "", "path to a file containing song ids")
+	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.Num, "playids.num", playIDsDefaultNum, "playids num of songs")
+	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.GapMin, "playids.gap-min", playIDsDefaultGapMin, "minimum random gap between songs in seconds")
+	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.GapMax, "playids.gap-max", playIDsDefaultGapMax, "maximum random gap between songs in seconds")
 
 	c.cmd.PersistentFlags().BoolVar(&c.opts.SignIn, "sign", false, "enabled sign task")
 	c.cmd.PersistentFlags().StringVar(&c.opts.SignInOptsCrontab, "sign.cron", "0 10 * * *", "sign crontab expression. usage detail: https://crontab.guru")
@@ -127,11 +139,24 @@ func (c *Task) validate() error {
 			}
 			return nil
 		}
+		playids = func() error {
+			if c.opts.PlayIDsOptsCrontab == "" {
+				return fmt.Errorf("playids.crontab is required")
+			}
+			if _, err := cron.ParseStandard(c.opts.PlayIDsOptsCrontab); err != nil {
+				return fmt.Errorf("ParseStandard: %w", err)
+			}
+			return nil
+		}
 	)
 
 	var o = c.opts
-	if o.RunAll || (!o.SignIn && !o.Partner && !o.Scrobble) {
-		return errors.Join(signIn(), partner(), scrobble())
+	if o.RunAll || (!o.SignIn && !o.Partner && !o.Scrobble && !o.PlayIDs) {
+		var err = errors.Join(signIn(), partner(), scrobble())
+		if o.PlayIDs {
+			err = errors.Join(err, playids())
+		}
+		return err
 	} else {
 		if o.SignIn {
 			if err := signIn(); err != nil {
@@ -145,6 +170,11 @@ func (c *Task) validate() error {
 		}
 		if o.Scrobble {
 			if err := scrobble(); err != nil {
+				return err
+			}
+		}
+		if o.PlayIDs {
+			if err := playids(); err != nil {
 				return err
 			}
 		}
@@ -232,6 +262,30 @@ func (c *Task) execute(ctx context.Context, args []string) error {
 			log.Info("[scrobble] next execute: %s", job.Entry(id).Schedule.Next(time.Now()))
 			return nil
 		}
+		playids = func() error {
+			c.cmd.Println("[playids] task register")
+			log.Info("[playids] task register")
+			p := NewPlayIDs(c.root, c.l)
+			p.cmd.DisableFlagParsing = true
+			p.opts = c.opts.PlayIDsOpts
+			if err := p.validate(); err != nil {
+				return fmt.Errorf("validate: %w", err)
+			}
+
+			id, err := job.AddFunc(c.opts.PlayIDsOptsCrontab, func() {
+				log.Info("[playids] task start")
+				if err := p.Command().ExecuteContext(ctx); err != nil {
+					log.Error("[playids] execute err: %s", err)
+					return
+				}
+				log.Info("[playids] execute success")
+			})
+			if err != nil {
+				return fmt.Errorf("[playids] crontab error: %v", err)
+			}
+			log.Info("[playids] next execute: %s", job.Entry(id).Schedule.Next(time.Now()))
+			return nil
+		}
 		signIn = func() error {
 			c.cmd.Println("[sign] task register")
 			log.Info("[sign] task register")
@@ -259,8 +313,12 @@ func (c *Task) execute(ctx context.Context, args []string) error {
 	)
 
 	var o = c.opts
-	if o.RunAll || (!o.SignIn && !o.Partner && !o.Scrobble) {
-		if err := errors.Join(signIn(), partner(), scrobble()); err != nil {
+	if o.RunAll || (!o.SignIn && !o.Partner && !o.Scrobble && !o.PlayIDs) {
+		err := errors.Join(signIn(), partner(), scrobble())
+		if o.PlayIDs {
+			err = errors.Join(err, playids())
+		}
+		if err != nil {
 			return err
 		}
 	} else {
@@ -276,6 +334,11 @@ func (c *Task) execute(ctx context.Context, args []string) error {
 		}
 		if o.Scrobble {
 			if err := scrobble(); err != nil {
+				return err
+			}
+		}
+		if o.PlayIDs {
+			if err := playids(); err != nil {
 				return err
 			}
 		}
