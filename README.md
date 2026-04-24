@@ -1,10 +1,221 @@
+<a href="https://github.com/3899/netease-cloud-music">
+  <img src="https://socialify.git.ci/3899/netease-cloud-music/image?description=1&descriptionEditable=%E7%BD%91%E6%98%93%E4%BA%91%E9%9F%B3%E4%B9%90%20Golang%20API%20%E6%8E%A5%E5%8F%A3%20%2B%20%E5%91%BD%E4%BB%A4%E8%A1%8C%E5%B7%A5%E5%85%B7%E5%A5%97%E4%BB%B6%20%2B%20%E4%B8%80%E9%94%AE%E5%AE%8C%E6%88%90%E6%AF%8F%E6%97%A5%E4%BB%BB%E5%8A%A1&font=Source%20Code%20Pro&logo=https%3A%2F%2Fp6.music.126.net%2Fobj%2Fwo3DlcOGw6DClTvDisK1%2F62177614927%2F22ad%2F1953%2Fa6cf%2Fe7007953d5942445a0444ca346bd06be.png%3Fraw%3Dtrue&name=1&owner=1&pattern=Floating%20Cogs&theme=Auto" alt="netease-cloud-music" />
+</a>
+
+<div align="center">
+  <br/>
+
+  <div>
+    <a href="./LICENSE">
+      <img
+        src="https://img.shields.io/github/license/3899/netease-cloud-music?style=flat-square"
+      />
+    </a >
+    <a href="https://github.com/3899/netease-cloud-music/releases">
+      <img
+        src="https://img.shields.io/github/v/release/3899/netease-cloud-music?style=flat-square"
+      />
+    </a >
+    <a href="https://github.com/3899/netease-cloud-music/releases">
+      <img
+        src="https://img.shields.io/github/downloads/3899/netease-cloud-music/total?style=flat-square"
+      />  
+    </a >
+  </div>
+  
+</div>
+
 # 🎵 netease-cloud-music
 
+> 🎖 本项目基于开源项目 [netease-cloud-music](https://github.com/chaunsin/netease-cloud-music) 完成二次开发与功能拓展，谨向原作者及开源社区致以诚挚谢意。
+
+## 本次新增功能说明
+
+### 使用前先登录
+
+`playids`、`task --playids`、`sign`、`scrobble` 这类命令都需要先登录。
+
+最常用的是 Cookie 登录：
+
+```shell
+# 直接导入 Cookie 字符串
+ncmctl login cookie 'MUSIC_U=xxx; __csrf=yyy; NMTID=zzz;'
+
+# 或从文件导入
+ncmctl login cookie -f cookie.txt
+```
+
+如果已经有 CookieCloud，也可以直接登录：
+
+```shell
+ncmctl login cookiecloud -u <你的UUID> -p <你的密码> -s http://127.0.0.1:8088
+```
+
+登录成功后，再执行 `playids` 或 `task --playids`。
+
+### `playids` 指定歌曲完整播放
+
+`playids` 用于对指定 `songId` 池执行真实完整播放。它会实际拉取音频资源到 `io.Discard`，不足整首歌时长会补等，成功后再上报播放日志。
+
+适用场景：
+
+- 单账号定向播放指定歌曲
+- 需要重复播放固定歌曲池，而不是从榜单自动选歌
+- 需要在账号已满级时仍继续执行播放任务
+
+命令格式：
+
+```shell
+ncmctl playids --ids <songId列表> [--ids-file <文件>] [--num <数量>] [--gap-min <秒>] [--gap-max <秒>]
+```
+
+参数说明：
+
+| 参数 | 说明 | 默认值 |
+|:--|:--|:--|
+| `--ids` | 直接传入 songId 列表，支持逗号、空格分隔 | 空 |
+| `--ids-file` | 从文件读取 songId 列表 | 空 |
+| `--num` | 本次最多播放多少首 | `300` |
+| `--gap-min` | 两首歌之间最小随机间隔秒数 | `5` |
+| `--gap-max` | 两首歌之间最大随机间隔秒数 | `20` |
+
+```shell
+# 直接传入多个songId
+ncmctl playids --ids 3373818852,3373845775,3372894655,3370932775 --num 10
+
+# 从文件读取songId
+ncmctl playids --ids-file ./song_ids.txt --num 50
+
+# 不插入歌曲间隔，便于快速验证
+ncmctl playids --ids 3370932775 --num 1 --gap-min 0 --gap-max 0
+```
+
+`song_ids.txt` 示例：
+
+```text
+3373818852
+3373845775
+3372894655
+3372989897
+3370932775
+3370931988
+```
+
+行为说明：
+
+- 输入支持 `--ids` 和 `--ids-file` 同时给出，运行前会合并并去重
+- 歌曲每轮会随机打乱，池耗尽后允许重复播放
+- 忽略账号满级限制，但仍受每日 300 首总上限约束
+- 与 `scrobble` 共用同一当日计数
+- 如果某首歌不可播放、拉流失败或上报失败，该首会记失败，但整批任务会继续执行
+- 当歌曲池数量小于 `--num` 时，会自动开始下一轮随机打乱继续播放
+
+执行过程：
+
+1. 读取并去重歌曲池
+2. 查询歌曲详情与时长
+3. 调用 `SongPlayerV1` 获取播放地址
+4. 拉取整首音频流到 `io.Discard`
+5. 若拉流耗时短于歌曲时长，则补等到整首结束
+6. 调用 `WebLog` 上报完整播放
+
+中文日志会输出：
+
+- 当前账号 `uid` 和昵称
+- 本次歌曲池明细
+- 当前正在播放第几首
+- 每首歌的成功/失败结果
+- 最终汇总结果
+
+典型日志效果：
+
+```text
+[playids] 当前账号: uid=123456789 昵称="张三"
+[playids] 任务开始: 歌曲池=3首, 目标播放=5首, 今日已完成=2首, 今日剩余=298首, 间隔=5s-20s
+[playids] 歌曲池[1]: songId=3370932775 歌名="歌A" 时长=1m17s
+[playids] 正在播放: 第1/5首, 第1轮第1首, songId=3370932775, 歌名="歌A", 时长=1m17s
+[playids] 拉流完成: songId=3370932775, 已耗时=3s, 补等待=1m14s
+[playids] 播放上报成功: songId=3370932775, 上报时长=77s
+[playids] 本首结果: 第1/5首, 成功, songId=3370932775, 歌名="歌A"
+[playids] 执行完成: 目标=5首, 成功=5首, 失败=0首
+```
+
+快速验证建议：
+
+```shell
+# 先用短歌验证 1 首
+ncmctl playids --ids 3370932775 --num 1 --gap-min 0 --gap-max 0
+
+# 再验证多首轮转
+ncmctl playids --ids 3373818852,3373845775 --num 5 --gap-min 0 --gap-max 0
+```
+
+### `task` 对 `playids` 的显式支持
+
+`playids` 不属于默认任务，只有显式传 `--playids` 才会启用。
+
+命令格式：
+
+```shell
+ncmctl task --playids [--playids.ids <songId列表>] [--playids.ids-file <文件>] [--playids.num <数量>] [--playids.cron "<cron表达式>"]
+```
+
+```shell
+# 每天按默认 cron 执行 playids
+ncmctl task --playids --playids.ids-file ./song_ids.txt --playids.num 50
+
+# 自定义 cron
+ncmctl task --playids --playids.ids 3373818852,3373845775 --playids.num 10 --playids.cron "0 19 * * *"
+```
+
+注意：
+
+- `task` 默认不会自动带上 `playids`
+- 必须显式传 `--playids`
+- 开启 `--playids` 但没有提供 `playids.ids` 或 `playids.ids-file` 时会直接报错
+- `playids` 仍与 `scrobble` 共享每日 300 首总上限
+
+### Docker 用法
+
+当前仓库建议直接使用 GitHub Container Registry 镜像：
+
+```shell
+docker pull ghcr.io/3899/netease-cloud-music:latest
+```
+
+如果使用 Docker，建议把歌曲文件挂载进容器，然后显式调用 `playids` 或 `task --playids`：
+
+```shell
+docker run --rm -it \
+  -v ${PWD}/data:/root \
+  -v ${PWD}/song_ids.txt:/root/song_ids.txt:ro \
+  ghcr.io/3899/netease-cloud-music:latest \
+  /app/ncmctl playids --ids-file /root/song_ids.txt --num 10
+```
+
+或：
+
+```shell
+docker run --rm -it \
+  -v ${PWD}/data:/root \
+  -v ${PWD}/song_ids.txt:/root/song_ids.txt:ro \
+  ghcr.io/3899/netease-cloud-music:latest \
+  /app/ncmctl task --playids --playids.ids-file /root/song_ids.txt --playids.num 50
+```
+
+### `playids` 与 `scrobble` 的区别
+
+|     命令     |   类型   | 说明 |
+|:----------:|:------:|:----|
+| `scrobble` | 单次任务/定时 | 从榜单里选歌并上报播放，包含满级退出逻辑与单曲去重 |
+| `playids`  | 单次任务/定时 | 播放指定 `songId` 池，真实完整播放后再上报，忽略满级但仍受每日300首上限约束 |
+
+## 以下为原作者文档
+
+---
 [![GoDoc](https://godoc.org/github.com/chaunsin/netease-cloud-music?status.svg)](https://godoc.org/github.com/chaunsin/netease-cloud-music) [![Go Report Card](https://goreportcard.com/badge/github.com/chaunsin/netease-cloud-music)](https://goreportcard.com/report/github.com/chaunsin/netease-cloud-music) [![ci](https://github.com/chaunsin/netease-cloud-music/actions/workflows/ci.yml/badge.svg)](https://github.com/chaunsin/netease-cloud-music/actions/workflows/ci.yml) [![deploy image](https://github.com/chaunsin/netease-cloud-music/actions/workflows/deploy_image.yml/badge.svg)](https://github.com/chaunsin/netease-cloud-music/actions/workflows/deploy_image.yml)
 
 > 🚀 网易云音乐 Golang API 接口 + 命令行工具套件 + 一键完成每日任务
-
----
 
 ## ⚠️ 重要声明
 
@@ -286,7 +497,6 @@ ncmctl task --scrobble.cron "0 20 * * *"
 > ⚠️ **警告：** 签到任务默认关闭自动领取奖励功能（存在封号风险），如需开启请添加 `--sign.automatic` 参数。
 
 ---
-
 ### 📥 三、音乐下载
 
 #### 下载单曲

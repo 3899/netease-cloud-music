@@ -57,7 +57,7 @@ func New() *Root {
 			Use:     "ncmctl",
 			Short:   "ncmctl command",
 			Long:    "ncmctl is a toolbox for netease cloud music\n\nMIT License Copyright (c) 2024 chaunsin\nhttps://github.com/chaunsin/netease-cloud-music\n" + title,
-			Example: "  ncmctl cloud\n  ncmctl crypto\n  ncmctl login\n  ncmctl curl\n  ncmctl partner\n  ncmctl scrobble\n  ncmctl sign\n  ncmctl task",
+			Example: "  ncmctl cloud\n  ncmctl crypto\n  ncmctl login\n  ncmctl curl\n  ncmctl partner\n  ncmctl playids\n  ncmctl scrobble\n  ncmctl sign\n  ncmctl task",
 		},
 	}
 	c.cmd.SetVersionTemplate(`{{printf "%s\n" .Version}}`)
@@ -114,6 +114,7 @@ func New() *Root {
 	c.Add(NewCurl(c, c.l).Command())
 	c.Add(NewCloud(c, c.l).Command())
 	c.Add(NewTask(c, c.l).Command())
+	c.Add(NewPlayIDs(c, c.l).Command())
 	c.Add(NewScrobble(c, c.l).Command())
 	c.Add(NewSignIn(c, c.l).Command())
 	c.Add(NewNCM(c, c.l).Command())

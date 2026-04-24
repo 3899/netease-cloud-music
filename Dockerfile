@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1
-FROM golang:1.23 AS builder
+FROM golang:1.24 AS builder
 
 ARG GOPROXY=https://goproxy.cn,direct
 ARG VERSION
@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.authors="chaunsin"
 LABEL org.opencontainers.image.vendor="chaunsin"
 LABEL org.opencontainers.image.title="ncmctl CLI"
 LABEL org.opencontainers.image.description="neatse cloud music command tool"
-LABEL org.opencontainers.image.source="https://github.com/chaunsin/ncmctl"
+LABEL org.opencontainers.image.source="https://github.com/3899/netease-cloud-music"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.version=${VERSION}
 

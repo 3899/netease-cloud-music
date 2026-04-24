@@ -1,0 +1,142 @@
+name: manual-package
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag, e.g. v0.0.0-manual.1"
+        required: true
+        default: "v0.0.0-manual.1"
+      release_name:
+        description: "Release name shown on GitHub Releases"
+        required: true
+        default: "Manual package build"
+      prerelease:
+        description: "Create as prerelease"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    if: ${{ github.repository == '3899/netease-cloud-music' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+
+      - name: Set build env
+        run: |
+          echo "BUILD_TIME=$(date --rfc-3339=seconds --utc)" >> "$GITHUB_ENV"
+          echo "COMMIT_HASH=$(echo "${{ github.sha }}" | cut -c 1-7)" >> "$GITHUB_ENV"
+          echo "VERSION=${{ inputs.release_tag }}" >> "$GITHUB_ENV"
+
+      - name: Prepare release notes
+        run: |
+          cat > release-notes.md <<'EOF'
+          ##✨ 变化特性
+
+          - 新增 `playids`：支持按 `songId` 池执行真实完整播放，支持 `--ids` 和 `--ids-file`
+          - 新增 `task --playids`：支持显式启用定时指定歌曲完整播放
+          - `playids` 忽略账号满级限制，但仍与 `scrobble` 共享每日 300 首总上限
+          - 新增中文运行日志：显示当前账号、歌曲池、播放进度、单首结果和最终汇总
+          - 新增青龙 `playids` 环境变量与用法说明，支持歌曲列表和歌曲文件两种输入方式
+          - 发布包矩阵精简为 `windows/amd64`、`linux/amd64`、`linux/arm64`、`linux/armv6`
+          EOF
+
+      - name: Build packages
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/manual
+
+          build_one() {
+            local goos="$1"
+            local goarch="$2"
+            local goarm="${3:-}"
+            local ext=""
+            local binary="ncmctl"
+            local dir_name="${goos}_${goarch}"
+            local archive=""
+            local target_dir="dist/manual/${dir_name}"
+
+            if [ -n "${goarm}" ]; then
+              dir_name="${goos}_${goarch}v${goarm}"
+              target_dir="dist/manual/${dir_name}"
+            fi
+
+            mkdir -p "${target_dir}"
+
+            if [ "${goos}" = "windows" ]; then
+              ext=".exe"
+              binary="ncmctl.exe"
+              archive="dist/manual/ncmctl_${goos}_${goarch}.zip"
+            elif [ -n "${goarm}" ]; then
+              archive="dist/manual/ncmctl_${goos}_${goarch}v${goarm}.tar.gz"
+            else
+              archive="dist/manual/ncmctl_${goos}_${goarch}.tar.gz"
+            fi
+
+            cp README.md LICENSE "${target_dir}/"
+
+            env CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" GOARM="${goarm}" \
+              go build \
+              -tags timetzdata \
+              -ldflags "-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT_HASH}' -X 'main.BuildTime=${BUILD_TIME}'" \
+              -o "${target_dir}/${binary}" \
+              ./cmd/ncmctl
+
+            if [ "${goos}" = "windows" ]; then
+              (
+                cd "${target_dir}"
+                zip -9 -r "../$(basename "${archive}")" .
+              )
+            else
+              tar -C "${target_dir}" -czf "${archive}" .
+            fi
+          }
+
+          build_one windows amd64
+          build_one linux amd64
+          build_one linux arm64
+          build_one linux arm 6
+
+      - name: List generated packages
+        run: |
+          ls -lah dist/manual
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.release_tag }}-packages
+          path: |
+            dist/manual/*.zip
+            dist/manual/*.tar.gz
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_name }}
+          target_commitish: ${{ github.sha }}
+          body_path: release-notes.md
+          files: |
+            dist/manual/*.zip
+            dist/manual/*.tar.gz
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
