@@ -66,10 +66,12 @@ func TestPlaySongQueueRepeatsAcrossRounds(t *testing.T) {
 	}
 }
 
-func TestBuildPlayWebLogRequest(t *testing.T) {
+func TestBuildPlayCompleteWebLogRequest(t *testing.T) {
 	t.Parallel()
 
-	withAlbum := buildPlayWebLogRequest(playSongMetadata{ID: 12, AlbumID: 34}, 123)
+	song := playSongMetadata{ID: 12, AlbumID: 34}
+	src := playSourceForSong(song)
+	withAlbum := buildPlayCompleteWebLogRequest(song, src, 123, "playend", 0)
 	payload := withAlbum.Logs[0]["json"].(map[string]interface{})
 	if payload["source"] != "album" {
 		t.Fatalf("unexpected source: %v", payload["source"])
@@ -80,17 +82,19 @@ func TestBuildPlayWebLogRequest(t *testing.T) {
 	if payload["content"] != "id=34" {
 		t.Fatalf("unexpected content: %v", payload["content"])
 	}
+	if payload["end"] != "playend" {
+		t.Fatalf("unexpected end: %v", payload["end"])
+	}
 
-	withoutAlbum := buildPlayWebLogRequest(playSongMetadata{ID: 12}, 123)
+	songNoAlbum := playSongMetadata{ID: 12}
+	srcNoAlbum := playSourceForSong(songNoAlbum)
+	withoutAlbum := buildPlayCompleteWebLogRequest(songNoAlbum, srcNoAlbum, 123, "ui", 1)
 	payload = withoutAlbum.Logs[0]["json"].(map[string]interface{})
-	if _, ok := payload["source"]; ok {
-		t.Fatalf("source should be omitted when album is empty: %v", payload)
+	if payload["source"] != "list" {
+		t.Fatalf("unexpected source for no album: %v", payload["source"])
 	}
-	if _, ok := payload["sourceId"]; ok {
-		t.Fatalf("sourceId should be omitted when album is empty: %v", payload)
-	}
-	if _, ok := payload["content"]; ok {
-		t.Fatalf("content should be omitted when album is empty: %v", payload)
+	if payload["end"] != "ui" {
+		t.Fatalf("unexpected end: %v", payload["end"])
 	}
 }
 
