@@ -1,20 +1,23 @@
 # 配置文件版本
 version: 1.0
-# log 日志模块配置
+
+# ========================
+# 日志模块配置
+# ========================
 log:
   # 应用名称
   app: ncm
-  # 日志输出格式 text json
+  # 日志输出格式，支持 text 和 json 两种格式
   format: text
-  # 日志级别 debug < info < warn < error
+  # 日志级别，从低到高依次为: debug < info < warn < error
   level: info
-  # 日志是否输出到标准输出
+  # 是否将日志同时输出到标准输出（控制台）
   stdout: false
   # 滚动日志配置
   rotate:
     # 日志文件保存路径
     filename: "${HOME}/.ncmctl/log/ncm.log"
-    # 单个日志文件最大大小,单位MB
+    # 单个日志文件最大大小，单位 MB
     maxsize: 100
     # 日志文件保留天数
     maxage: 7
@@ -24,23 +27,67 @@ log:
     localtime: true
     # 日志文件是否压缩
     compress: true
+
+# ========================
 # 网络模块配置
+# ========================
 network:
-  # 是否开启调试模式
+  # 是否开启调试模式（打印请求/响应详情）
   debug: false
   # 请求超时时间
   timeout: 60s
-  # 当网络出现问题重试次数
+  # 网络异常时的重试次数
   retry: 3
-  # cookie 配置用于保存登录相关信息
+  # Cookie 配置，用于保存登录态信息
   cookie:
-    # cookie 文件保存路径
+    # Cookie 文件保存路径
     filepath: "${HOME}/.ncmctl/cookie.json"
-    # cookie 刷盘间隔,如果间隔过大当程序崩溃或退出,可能导致cookie值不能刷到磁盘中.如果间隔过小,会导致频繁刷盘,影响性能.
+    # Cookie 刷盘间隔。间隔过大可能导致崩溃时丢失登录态；间隔过小会频繁写磁盘影响性能
     interval: 3s
+
+# ========================
 # 数据缓存配置
+# ========================
 database:
-  # 缓存驱动,目前支持badger
+  # 缓存驱动，目前仅支持 badger
   driver: badger
-  # 缓存目录
+  # 缓存目录路径
   path: "${HOME}/.ncmctl/database/badger/"
+
+# ========================
+# 设备指纹配置（可选）
+# ========================
+# 用于模拟 Android 客户端身份。如果不配置，程序会自动生成随机设备指纹并持久化到数据库。
+# 如果配置了某个字段，该字段的值将覆盖自动生成的值（未配置的字段保持自动生成）。
+# 建议：从自己手机的网易云音乐 APP 抓包中提取真实设备信息填入，仿真度更高。
+#
+# device:
+#   # 设备ID，格式为两个 UUID 用 | 连接后 URL 编码
+#   # 获取方式：抓包查看请求 Cookie 中的 deviceId 字段
+#   deviceId: ""
+#   # 操作系统标识，一般为 android
+#   os: "android"
+#   # Android 系统版本号，如 12、13、14、15
+#   osVer: "14"
+#   # 网易云音乐 APP 版本号
+#   appVer: "9.5.0"
+#   # 下载渠道
+#   channel: "netease"
+#   # 设备型号，如: Pixel 8、SM-S9210、Xiaomi 14
+#   mobileName: ""
+#   # 屏幕分辨率，如: 1080x2400
+#   resolution: ""
+
+# ========================
+# PlayIDs 播放任务配置（可选）
+# ========================
+# 控制 playids 命令的每日播放次数上限。
+# 每天首次运行时，程序会在 [dailyMin, dailyMax] 区间内随机确定当天的播放目标，
+# 并持久化到数据库，当天后续运行复用同一目标值。
+# 这样每天的播放次数不完全相同，更加自然。
+# 命令行参数 --daily-min 和 --daily-max 会覆盖此配置。
+playids:
+  # 每日播放次数下限（含）
+  dailyMin: 50
+  # 每日播放次数上限（含）
+  dailyMax: 100

@@ -46,14 +46,15 @@ jobs:
       - name: Prepare release notes
         run: |
           cat > release-notes.md <<'EOF'
-          ##✨ 变化特性
+          ## ✨ 变化特性
 
-          - 新增 `playids`：支持按 `songId` 池执行真实完整播放，支持 `--ids` 和 `--ids-file`
-          - 新增 `task --playids`：支持显式启用定时指定歌曲完整播放
-          - `playids` 忽略账号满级限制，但仍与 `scrobble` 共享每日 300 首总上限
-          - 新增中文运行日志：显示当前账号、歌曲池、播放进度、单首结果和最终汇总
-          - 新增青龙 `playids` 环境变量与用法说明，支持歌曲列表和歌曲文件两种输入方式
-          - 发布包矩阵精简为 `windows/amd64`、`linux/amd64`、`linux/arm64`、`linux/armv6`
+          - **增强 `playids` 仿真度**：基于 Android 逆向实现三阶段 WebLog 上报 (`startplay`/`play-begin`/`play-complete`)。
+          - **迁移至 EAPI 协议**：使用 Android 客户端原生接口获取播放 URL，全面模拟客户端网络行为。
+          - **真实设备指纹**：内置 50 款主流安卓机型库，支持按 UID 持久化隔离，确保账号设备身份唯一且稳定。
+          - **独立的每日上限**：`playids` 拥有独立的每日播放计数 (不再与 `scrobble` 共享)，支持自定义区间并每日随机化目标。
+          - **CDN 音频缓存**：支持单次任务内音频流复用，减少 CDN 异常流量，并精准上报 `download` 缓存标记。
+          - **精细化中文日志**：新增设备指纹详情、三阶段上报明细、CDN/缓存来源及播放结束类型显示。
+          - **发布包优化**：发布矩阵精简为 `windows/amd64`、`linux/amd64`、`linux/arm64`、`linux/armv6`。
           EOF
 
       - name: Build packages

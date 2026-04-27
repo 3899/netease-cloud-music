@@ -55,7 +55,7 @@ ncmctl login cookiecloud -u <你的UUID> -p <你的密码> -s http://127.0.0.1:8
 
 ### `playids` 指定歌曲完整播放
 
-`playids` 用于对指定 `songId` 池执行真实完整播放。它会实际拉取音频资源到 `io.Discard`，不足整首歌时长会补等，成功后再上报播放日志。
+`playids` 用于对指定 `songId` 池执行真实完整播放，模拟 Android 客户端行为。
 
 适用场景：
 
@@ -63,28 +63,64 @@ ncmctl login cookiecloud -u <你的UUID> -p <你的密码> -s http://127.0.0.1:8
 - 需要重复播放固定歌曲池，而不是从榜单自动选歌
 - 需要在账号已满级时仍继续执行播放任务
 
-命令格式：
+#### 模拟真实客户端行为
+
+基于 Android 逆向分析，实现了以下仿真特性：
+
+| 特性 | 说明 |
+|:--|:--|
+| **三阶段 WebLog 上报** | `startplay` → `play-begin` → `play-complete`，与 Android 端一致 |
+| **EAPI 加密通信** | 使用 `EAPI` 加密通道进行播放，与 Android 端相同 |
+| **设备指纹持久化** | 自动生成 Android 设备身份（deviceId、型号、系统版本等），持久化到数据库，跨会话复用 |
+| **CDN 音频缓存** | 同一首歌在单次任务中仅下载一次，后续播放走缓存，上报 `download=1` |
+| **播放时长抖动** | 上报时长添加 ±0~3 秒随机偏移，避免精确整数秒 |
+| **结束类型混合** | 85% `playend`（正常结束）、10% `ui`（手动切歌）、5% `interrupt`（中断） |
+| **自然间隔分布** | 歌曲间隔采用幂函数分布，偏向较短间隔，更接近真实用户行为 |
+
+#### 独立的每日播放上限
+
+`playids` 拥有独立的每日计数器（与 `scrobble` 完全分离），支持配置区间范围：
+
+- 每天首次运行时，在 `[dailyMin, dailyMax]` 区间内随机确定当天目标
+- 持久化到数据库，当天后续运行复用同一目标值
+- 每天的播放次数不完全相同，更加自然
+
+默认区间为 `50~100`，可通过配置文件或命令行参数修改。
+
+#### 命令格式
 
 ```shell
-ncmctl playids --ids <songId列表> [--ids-file <文件>] [--num <数量>] [--gap-min <秒>] [--gap-max <秒>]
+ncmctl playids --ids <songId列表> [--ids-file <文件>] [--num <数量>] [--gap-min <秒>] [--gap-max <秒>] [--daily-min <下限>] [--daily-max <上限>]
 ```
 
-参数说明：
+#### 参数说明
 
 | 参数 | 说明 | 默认值 |
 |:--|:--|:--|
 | `--ids` | 直接传入 songId 列表，支持逗号、空格分隔 | 空 |
 | `--ids-file` | 从文件读取 songId 列表 | 空 |
-| `--num` | 本次最多播放多少首 | `300` |
+| `--num` | 本次最多播放多少首（0 = 播到今日上限为止） | `0` |
 | `--gap-min` | 两首歌之间最小随机间隔秒数 | `5` |
 | `--gap-max` | 两首歌之间最大随机间隔秒数 | `20` |
+| `--daily-min` | 每日播放次数下限（含） | `50`（读取配置文件） |
+| `--daily-max` | 每日播放次数上限（含） | `100`（读取配置文件） |
+
+> 💡 **优先级：** 命令行参数 > 配置文件 > 代码默认值
+
+#### 使用示例
 
 ```shell
-# 直接传入多个songId
-ncmctl playids --ids 3373818852,3373845775,3372894655,3370932775 --num 10
+# 直接传入多个songId，播到今日上限
+ncmctl playids --ids 3373818852,3373845775,3372894655,3370932775
 
 # 从文件读取songId
-ncmctl playids --ids-file ./song_ids.txt --num 50
+ncmctl playids --ids-file ./song_ids.txt
+
+# 本次只播 10 首
+ncmctl playids --ids 3370932775 --num 10
+
+# 临时指定今日上限为 200~250
+ncmctl playids --ids 3370932775 --daily-min 200 --daily-max 250
 
 # 不插入歌曲间隔，便于快速验证
 ncmctl playids --ids 3370932775 --num 1 --gap-min 0 --gap-max 0
@@ -101,54 +137,79 @@ ncmctl playids --ids 3370932775 --num 1 --gap-min 0 --gap-max 0
 3370931988
 ```
 
-行为说明：
+#### 行为说明
 
 - 输入支持 `--ids` 和 `--ids-file` 同时给出，运行前会合并并去重
 - 歌曲每轮会随机打乱，池耗尽后允许重复播放
-- 忽略账号满级限制，但仍受每日 300 首总上限约束
-- 与 `scrobble` 共用同一当日计数
+- `playids` 拥有独立的每日计数，**不再与 `scrobble` 共享上限**
 - 如果某首歌不可播放、拉流失败或上报失败，该首会记失败，但整批任务会继续执行
-- 当歌曲池数量小于 `--num` 时，会自动开始下一轮随机打乱继续播放
+- 当歌曲池数量小于目标时，会自动开始下一轮随机打乱继续播放
 
-执行过程：
+#### 执行过程
 
 1. 读取并去重歌曲池
-2. 查询歌曲详情与时长
-3. 调用 `SongPlayerV1` 获取播放地址
-4. 拉取整首音频流到 `io.Discard`
-5. 若拉流耗时短于歌曲时长，则补等到整首结束
-6. 调用 `WebLog` 上报完整播放
+2. 加载/生成设备指纹，注入 Cookie
+3. 确定今日播放上限（首次运行随机，后续复用）
+4. 查询歌曲详情与时长
+5. 通过 EAPI 获取播放 URL
+6. **Phase 1**: 上报 `startplay` 事件
+7. 模拟缓冲延迟（100~500ms）
+8. **Phase 2**: 上报 `play-begin` 事件
+9. 拉取音频流（首次从 CDN，后续走缓存）
+10. 等待至歌曲时长完成（含 ±0~3s 抖动）
+11. **Phase 3**: 上报 `play-complete` 事件（含时长、结束类型）
 
-中文日志会输出：
-
-- 当前账号 `uid` 和昵称
-- 本次歌曲池明细
-- 当前正在播放第几首
-- 每首歌的成功/失败结果
-- 最终汇总结果
-
-典型日志效果：
+#### 典型日志
 
 ```text
 [playids] 当前账号: uid=123456789 昵称="张三"
-[playids] 任务开始: 歌曲池=3首, 目标播放=5首, 今日已完成=2首, 今日剩余=298首, 间隔=5s-20s
-[playids] 歌曲池[1]: songId=3370932775 歌名="歌A" 时长=1m17s
-[playids] 正在播放: 第1/5首, 第1轮第1首, songId=3370932775, 歌名="歌A", 时长=1m17s
-[playids] 拉流完成: songId=3370932775, 已耗时=3s, 补等待=1m14s
-[playids] 播放上报成功: songId=3370932775, 上报时长=77s
-[playids] 本首结果: 第1/5首, 成功, songId=3370932775, 歌名="歌A"
-[playids] 执行完成: 目标=5首, 成功=5首, 失败=0首
+[playids] 设备指纹: 设备=Xiaomi 17 Pro Max, 系统=Android 15, 版本=9.5.0, 渠道=netease, deviceId=A1B2C3D4...
+[playids] 任务开始: 歌曲池=3首, 目标播放=73首, 今日上限=73首, 今日已完成=0首, 今日剩余=73首, 间隔=5s-20s
+[playids] 歌曲池[1]: songId=3370932775 歌名="歌A" 时长=3m17s
+[playids] 正在播放: 第1/73首, 第1轮第1首, songId=3370932775, 歌名="歌A", 时长=3m17s
+[playids] Phase1 startplay: songId=3370932775, 结果=成功
+[playids] Phase2 play-begin: songId=3370932775, 缓冲耗时=327ms
+[playids] Phase2 play-begin: songId=3370932775, 结果=成功
+[playids] 拉流完成: songId=3370932775, 来源=CDN, 已耗时=3s, 补等待=3m14s, end=playend
+[playids] Phase3 play-complete: songId=3370932775, 结果=成功, 上报时长=199s, end=playend, download=0
+[playids] 本首结果: 第1/73首, 成功, songId=3370932775, 歌名="歌A"
+[playids] 播放间隔: 下一首等待 7s
+...
+[playids] 正在播放: 第4/73首, 第2轮第1首, songId=3370932775, 歌名="歌A", 时长=3m17s
+[playids] Phase1 startplay: songId=3370932775, 结果=成功
+[playids] Phase2 play-begin: songId=3370932775, 缓冲耗时=215ms
+[playids] Phase2 play-begin: songId=3370932775, 结果=成功
+[playids] 拉流完成: songId=3370932775, 来源=缓存, 已耗时=3s, 补等待=3m15s, end=playend
+[playids] Phase3 play-complete: songId=3370932775, 结果=成功, 上报时长=198s, end=playend, download=1
+...
+[playids] 执行完成: 目标=73首, 成功=73首, 失败=0首
+[playids] 今日统计: 执行前=0首, 执行后=73首, 今日上限=73首
 ```
 
-快速验证建议：
+#### 配置文件
 
-```shell
-# 先用短歌验证 1 首
-ncmctl playids --ids 3370932775 --num 1 --gap-min 0 --gap-max 0
+在 `config.yaml` 中可以配置 playids 每日上限和设备指纹（可选）：
 
-# 再验证多首轮转
-ncmctl playids --ids 3373818852,3373845775 --num 5 --gap-min 0 --gap-max 0
+```yaml
+# PlayIDs 播放任务配置
+# 每天首次运行时，在 [dailyMin, dailyMax] 区间内随机确定当天目标
+playids:
+  dailyMin: 50
+  dailyMax: 100
+
+# 设备指纹配置（可选）
+# 建议从自己手机的网易云音乐 APP 抓包中提取真实设备信息填入
+# device:
+#   deviceId: "从Cookie中的deviceId字段获取"
+#   os: "android"
+#   osVer: "14"
+#   appVer: "9.5.0"
+#   channel: "netease"
+#   mobileName: "Pixel 8"
+#   resolution: "1080x2400"
 ```
+
+> 💡 **提示：** 设备指纹不配置时会自动生成随机值并持久化，每个账号独立维护。配置文件中填写的字段会覆盖自动生成值。
 
 ### `task` 对 `playids` 的显式支持
 
@@ -157,15 +218,15 @@ ncmctl playids --ids 3373818852,3373845775 --num 5 --gap-min 0 --gap-max 0
 命令格式：
 
 ```shell
-ncmctl task --playids [--playids.ids <songId列表>] [--playids.ids-file <文件>] [--playids.num <数量>] [--playids.cron "<cron表达式>"]
+ncmctl task --playids [--playids.ids <songId列表>] [--playids.ids-file <文件>] [--playids.cron "<cron表达式>"]
 ```
 
 ```shell
 # 每天按默认 cron 执行 playids
-ncmctl task --playids --playids.ids-file ./song_ids.txt --playids.num 50
+ncmctl task --playids --playids.ids-file ./song_ids.txt
 
-# 自定义 cron
-ncmctl task --playids --playids.ids 3373818852,3373845775 --playids.num 10 --playids.cron "0 19 * * *"
+# 自定义 cron 和每日上限
+ncmctl task --playids --playids.ids 3373818852,3373845775 --playids.cron "0 19 * * *" --playids.daily-min 80 --playids.daily-max 120
 ```
 
 注意：
@@ -173,7 +234,6 @@ ncmctl task --playids --playids.ids 3373818852,3373845775 --playids.num 10 --pla
 - `task` 默认不会自动带上 `playids`
 - 必须显式传 `--playids`
 - 开启 `--playids` 但没有提供 `playids.ids` 或 `playids.ids-file` 时会直接报错
-- `playids` 仍与 `scrobble` 共享每日 300 首总上限
 
 ### Docker 用法
 
@@ -190,7 +250,7 @@ docker run --rm -it \
   -v ${PWD}/data:/root \
   -v ${PWD}/song_ids.txt:/root/song_ids.txt:ro \
   ghcr.io/3899/netease-cloud-music:latest \
-  /app/ncmctl playids --ids-file /root/song_ids.txt --num 10
+  /app/ncmctl playids --ids-file /root/song_ids.txt
 ```
 
 或：
@@ -200,15 +260,15 @@ docker run --rm -it \
   -v ${PWD}/data:/root \
   -v ${PWD}/song_ids.txt:/root/song_ids.txt:ro \
   ghcr.io/3899/netease-cloud-music:latest \
-  /app/ncmctl task --playids --playids.ids-file /root/song_ids.txt --playids.num 50
+  /app/ncmctl task --playids --playids.ids-file /root/song_ids.txt
 ```
 
 ### `playids` 与 `scrobble` 的区别
 
-|     命令     |   类型   | 说明 |
-|:----------:|:------:|:----|
-| `scrobble` | 单次任务/定时 | 从榜单里选歌并上报播放，包含满级退出逻辑与单曲去重 |
-| `playids`  | 单次任务/定时 | 播放指定 `songId` 池，真实完整播放后再上报，忽略满级但仍受每日300首上限约束 |
+|     命令     |   类型   | 每日上限 | 说明 |
+|:----------:|:------:|:----:|:---|
+| `scrobble` | 单次任务/定时 | 固定 300 | 从榜单里选歌并上报播放，包含满级退出逻辑与单曲去重 |
+| `playids`  | 单次任务/定时 | 可配置(50~100) | 播放指定 `songId` 池，模拟 Android 客户端行为，三阶段上报，独立计数 |
 
 ## 以下为原作者文档
 

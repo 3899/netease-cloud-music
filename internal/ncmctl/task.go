@@ -101,9 +101,11 @@ func (c *Task) addFlags() {
 	c.cmd.PersistentFlags().StringVar(&c.opts.PlayIDsOptsCrontab, "playids.cron", "0 19 * * *", "playids crontab expression. usage detail: https://crontab.guru")
 	c.cmd.PersistentFlags().StringVar(&c.opts.PlayIDsOpts.IDs, "playids.ids", "", "comma-separated song ids")
 	c.cmd.PersistentFlags().StringVar(&c.opts.PlayIDsOpts.IDsFile, "playids.ids-file", "", "path to a file containing song ids")
-	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.Num, "playids.num", playIDsDefaultNum, "playids num of songs")
+	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.Num, "playids.num", 0, "max number of songs per run (0 = use daily limit)")
 	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.GapMin, "playids.gap-min", playIDsDefaultGapMin, "minimum random gap between songs in seconds")
 	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.GapMax, "playids.gap-max", playIDsDefaultGapMax, "maximum random gap between songs in seconds")
+	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.DailyMin, "playids.daily-min", playIDsDefaultDailyMin, "daily play limit range minimum")
+	c.cmd.PersistentFlags().Int64Var(&c.opts.PlayIDsOpts.DailyMax, "playids.daily-max", playIDsDefaultDailyMax, "daily play limit range maximum")
 
 	c.cmd.PersistentFlags().BoolVar(&c.opts.SignIn, "sign", false, "enabled sign task")
 	c.cmd.PersistentFlags().StringVar(&c.opts.SignInOptsCrontab, "sign.cron", "0 10 * * *", "sign crontab expression. usage detail: https://crontab.guru")

@@ -44,6 +44,28 @@ type Config struct {
 	Log      *log.Config      `json:"log" yaml:"log"`
 	Network  *api.Config      `json:"network" yaml:"network"`
 	Database *database.Config `json:"database" yaml:"database"`
+	Device   *DeviceConfig    `json:"device" yaml:"device"`
+	PlayIDs  *PlayIDsConfig   `json:"playids" yaml:"playids"`
+}
+
+// DeviceConfig 设备指纹配置，允许用户指定真实设备信息覆盖自动生成值。
+// 未配置的字段将使用自动生成的随机值。
+type DeviceConfig struct {
+	DeviceId   string `json:"deviceId" yaml:"deviceId"`
+	Os         string `json:"os" yaml:"os"`
+	OsVer      string `json:"osVer" yaml:"osVer"`
+	AppVer     string `json:"appVer" yaml:"appVer"`
+	Channel    string `json:"channel" yaml:"channel"`
+	MobileName string `json:"mobileName" yaml:"mobileName"`
+	Resolution string `json:"resolution" yaml:"resolution"`
+}
+
+// PlayIDsConfig playids 命令的全局配置。
+type PlayIDsConfig struct {
+	// DailyMin 每日播放次数下限（含），每天首次运行时在 [DailyMin, DailyMax] 区间内随机确定当天目标
+	DailyMin int64 `json:"dailyMin" yaml:"dailyMin"`
+	// DailyMax 每日播放次数上限（含）
+	DailyMax int64 `json:"dailyMax" yaml:"dailyMax"`
 }
 
 func (c *Config) Validate() error {

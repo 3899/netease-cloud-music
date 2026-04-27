@@ -256,3 +256,73 @@ func (a *Api) V3SongDetail(ctx context.Context, req *V3SongDetailReq) (*V3SongDe
 	_ = resp
 	return &reply, nil
 }
+
+// SongPlayerV1Req EAPI song player request — mirrors the Android client's request structure.
+type SongPlayerV1Req struct {
+	types.ReqCommon
+	Ids         types.IntsString `json:"ids"`
+	Level       types.Level      `json:"level"`
+	EncodeType  string           `json:"encodeType"`
+	ImmerseType string           `json:"immerseType"`
+}
+
+// SongPlayerV1Resp EAPI song player response — same data format as WEAPI.
+type SongPlayerV1Resp struct {
+	types.RespCommon[[]SongPlayerV1RespData]
+}
+
+// SongPlayerV1RespData mirrors the WEAPI response structure for compatibility.
+type SongPlayerV1RespData struct {
+	Id                 int64                        `json:"id"`
+	Url                string                       `json:"url"`
+	Br                 int64                        `json:"br"`
+	Size               int64                        `json:"size"`
+	Md5                string                       `json:"md5"`
+	Code               int64                        `json:"code"`
+	Expi               int64                        `json:"expi"`
+	Type               string                       `json:"type"`
+	Gain               float64                      `json:"gain"`
+	Peak               float64                      `json:"peak"`
+	Fee                int64                        `json:"fee"`
+	Uf                 interface{}                  `json:"uf"`
+	Payed              int64                        `json:"payed"`
+	Flag               int64                        `json:"flag"`
+	CanExtend          bool                         `json:"canExtend"`
+	FreeTrialInfo      types.FreeTrialInfo          `json:"freeTrialInfo"`
+	Level              string                       `json:"level"`
+	EncodeType         string                       `json:"encodeType"`
+	ChannelLayout      interface{}                  `json:"channelLayout"`
+	FreeTrialPrivilege types.FreeTrialPrivilege     `json:"freeTrialPrivilege"`
+	FreeTimeTrialPrivilege types.FreeTimeTrialPrivilege `json:"freeTimeTrialPrivilege"`
+	UrlSource          int64                        `json:"urlSource"`
+	RightSource        int64                        `json:"rightSource"`
+	PodcastCtrp        interface{}                  `json:"podcastCtrp"`
+	EffectTypes        interface{}                  `json:"effectTypes"`
+	Time               int64                        `json:"time"`
+	Message            interface{}                  `json:"message"`
+	LevelConfuse       interface{}                  `json:"levelConfuse"`
+}
+
+// SongPlayerV1 获取歌曲播放URL (EAPI加密，模拟Android客户端)
+// 使用 /eapi/song/enhance/player/url/v1 端点，与Android APK中的请求路径一致。
+// needLogin: 是
+func (a *Api) SongPlayerV1(ctx context.Context, req *SongPlayerV1Req) (*SongPlayerV1Resp, error) {
+	var (
+		url   = "https://music.163.com/eapi/song/enhance/player/url/v1"
+		reply SongPlayerV1Resp
+		opts  = api.NewOptions()
+	)
+	opts.CryptoMode = api.CryptoModeEAPI
+
+	if req.Level == types.LevelSky {
+		req.ImmerseType = "c51"
+	}
+
+	resp, err := a.client.Request(ctx, url, req, &reply, opts)
+	if err != nil {
+		return nil, fmt.Errorf("Request: %w", err)
+	}
+	_ = resp
+	return &reply, nil
+}
+
